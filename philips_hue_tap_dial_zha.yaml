@@ -1,0 +1,162 @@
+# Philips Hue - Tap dial switch
+# https://www.philips-hue.com/en-us/p/hue-tap-dial-switch/046677578800
+
+blueprint:
+  name: Philips Hue Tap Dial
+  description: |
+    # Philips Hue Tap dial switch (ZHA)
+
+    Configurable actions for the [Hue Tap dial switch](https://www.philips-hue.com/en-us/p/hue-tap-dial-switch/046677578800) paired directly with Zigbee Home Assistant. This is not for a switch bridged to HA via the Hue integration.
+
+    Supports configurable actions for six events:
+      * Buttons 1-4 pressed
+      * Dial rotation left/right
+
+    A "prefix" and "suffix" can also be specified. These are actions that will be performed on any ZHA event from the device, regardless of what button or rotation event it is. These can be useful for things like debugging, setting input helpers, aborting early, etc.
+
+    This automation does not support double or long presses.
+
+  domain: automation
+  input:
+    remote:
+      name: Philips Hue Tap Switch
+      selector:
+        device:
+          integration: zha
+          manufacturer: Signify Netherlands B.V.
+          model: RDM002
+          multiple: false
+
+    prefix_actions:
+      name: (Optional) Prefix Actions
+      description: Actions to be performed at the beginning of the automation, regardless of what button or input was triggered.
+      default: []
+      selector:
+        action: {}
+
+    button_1_press:
+      name: Button 1 - Press
+      description: Actions to perform on a press of button 1 (upper left)
+      default: []
+      selector:
+        action: {}
+
+    button_2_press:
+      name: Button 2 - Press
+      description: Actions to perform on a press of button 2 (upper right)
+      default: []
+      selector:
+        action: {}
+
+    button_3_press:
+      name: Button 3 - Press
+      description: Actions to perform on a press of button 3 (lower left)
+      default: []
+      selector:
+        action: {}
+
+    button_4_press:
+      name: Button 4 - Press
+      description: Actions to perform on a press of button 4 (lower right)
+      default: []
+      selector:
+        action: {}
+
+    turn_left_action:
+      name: Dial - Turn Left
+      description: Actions to perform when turning the dial left (counterclockwise)
+      default: []
+      selector:
+        action: {}
+
+    turn_right_action:
+      name: Dial - Turn Right
+      description: Actions to perform when turning the dial right (clockwise)
+      default: []
+      selector:
+        action: {}
+
+    suffix_actions:
+      name: (Optional) Suffix Actions
+      description: Actions to be performed at the end of the automation, regardless of what button or input was triggered.
+      default: []
+      selector:
+        action: {}
+
+    debounce_delay_ms:
+      name: (Optional) Debounce delay
+      description: Delay in milliseconds for debouncing controller events. If actions are getting duplicated, increase this value to compensate.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 1000
+          unit_of_measurement: milliseconds
+          mode: box
+          step: 25
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  command: '{{ trigger.event.data.command }}'
+  scene: '{{ trigger.event.data.params.scene_id }}'
+  step_mode: '{{ trigger.event.data.params.step_mode }}'
+  step_size: '{{ trigger.event.data.params.step_size }}'
+
+trigger:
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+
+action:
+  # Debounce
+  # If the automation is getting triggered too often, this allows the
+  # user to trigger only one automation every X milliseconds, configured
+  # as an input. This relies on the mode: restart behavior.
+  - delay:
+      milliseconds: !input debounce_delay_ms
+
+  # Workaround to execute an action from an input. Just placing
+  # !input always_action here would cause a syntax error.
+  - if:
+      - condition: template
+        value_template: '{{ true }}'
+    then: !input prefix_actions
+
+  - choose:
+    - conditions:
+        - '{{ command == "step_with_on_off" }}'
+        - '{{ step_mode == "StepMode.Down" }}'
+      sequence: !input turn_left_action
+
+    - conditions:
+        - '{{ command == "step_with_on_off" }}'
+        - '{{ step_mode == "StepMode.Up" }}'
+      sequence: !input turn_right_action
+
+    - conditions:
+        - '{{ command == "recall" }}'
+        - '{{ scene == 1 }}'
+      sequence: !input button_1_press
+
+    - conditions:
+        - '{{ command == "recall" }}'
+        - '{{ scene == 0 }}'
+      sequence: !input button_2_press
+
+    - conditions:
+        - '{{ command == "recall" }}'
+        - '{{ scene == 5 }}'
+      sequence: !input button_3_press
+
+    - conditions:
+        - '{{ command == "recall" }}'
+        - '{{ scene == 4 }}'
+      sequence: !input button_4_press
+
+  - if:
+      - condition: template
+        value_template: '{{ true }}'
+    then: !input suffix_actions
