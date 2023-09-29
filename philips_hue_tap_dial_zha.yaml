@@ -16,6 +16,7 @@ blueprint:
 
     This automation does not support double or long presses.
 
+  source_url: https://github.com/replicaJunction/HA_Blueprints/blob/main/philips_hue_tap_dial_zha.yaml
   domain: automation
   input:
     remote:
