@@ -6,6 +6,8 @@ blueprint:
   description: |
     # Philips Hue Tap dial switch (ZHA)
 
+    [View online](https://github.com/replicaJunction/HA_Blueprints/blob/main/philips_hue_tap_dial_zha.yaml)
+
     Configurable actions for the [Hue Tap dial switch](https://www.philips-hue.com/en-us/p/hue-tap-dial-switch/046677578800) paired directly with Zigbee Home Assistant. This is not for a switch bridged to HA via the Hue integration.
 
     Supports configurable actions for six events:
