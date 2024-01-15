@@ -1,7 +1,6 @@
 blueprint:
   name: Morning Wake-Up Light
-  description: |
-    # Morning Wake-Up Light
+  description: '# Morning Wake-Up Light
 
     [View online](https://github.com/replicaJunction/HA_Blueprints/blob/main/morning_wake_up_light.yaml)
 
@@ -9,7 +8,7 @@ blueprint:
 
     The time in this helper is when the automation will **complete**, to make it easier to synchronize it with some other time (like a morning alarm). The automation will actually begin before the time set in this helper in order to make sure the lights are all the way on when the time is reached.
 
-    Optionall, "prefix" or "suffix" actions can also be specified to act at the beginning or at the end of the automation.
+    Optionally, "prefix" or "suffix" actions can also be specified to act at the beginning or at the end of the automation.'
 
   source_url: https://github.com/replicaJunction/HA_Blueprints/blob/main/morning_wake_up_light.yaml
   domain: automation
@@ -77,8 +76,7 @@ blueprint:
 
     min_seconds_per_step:
       name: (Optional) Minimum Seconds Per Step
-      description: |
-        Minimum number of seconds each "step" will take. This is typically not used unless the total runtime is set very low. If the automation is failing due to the Zigbee network being flooded (something like EmberStatus.NETWORK_BUSY: 161), raise this value to compensate.
+      description: 'Minimum number of seconds each "step" will take. This is typically not used unless the total runtime is set very low. If the automation is failing due to the Zigbee network being flooded (something like EmberStatus.NETWORK_BUSY: 161), raise this value to compensate.'
       default: 10
       selector:
         number:
