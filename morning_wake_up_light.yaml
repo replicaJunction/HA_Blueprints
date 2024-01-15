@@ -1,0 +1,171 @@
+blueprint:
+  name: Morning Wake-Up Light
+  description: |
+    # Morning Wake-Up Light
+
+    [View online](https://github.com/replicaJunction/HA_Blueprints/blob/main/morning_wake_up_light.yaml)
+
+    My take on a gradual wake-up light automation that provides a sort of "sunrise" effect. The target time should be provided as an [input date/time helper](https://www.home-assistant.io/integrations/input_datetime/), though only the time properties are used for this automation.
+
+    The time in this helper is when the automation will **complete**, to make it easier to synchronize it with some other time (like a morning alarm). The automation will actually begin before the time set in this helper in order to make sure the lights are all the way on when the time is reached.
+
+    Optionall, "prefix" or "suffix" actions can also be specified to act at the beginning or at the end of the automation.
+
+  source_url: https://github.com/replicaJunction/HA_Blueprints/blob/main/morning_wake_up_light.yaml
+  domain: automation
+  input:
+    light:
+      name: Lights
+      description: Lights to use for the gradual wake-up effect.
+      selector:
+        target:
+          entity:
+            - domain:
+                - light
+
+    target_time_input:
+      name: Target Time
+      description: Input date/time helper set to the final time when the automation will *complete* - that is, the lights will be at their target brightness. The actual start time will be calculated based on this value and the Total Runtime value.
+      selector:
+        entity:
+          domain: input_datetime
+
+    total_runtime:
+      name: Total Runtime
+      description: Total duration the automation will run. The longer this value, the longer the lights will stay on each brightness and temperature "step," and the earlier the automation will begin.
+      default:
+        minutes: 30
+      selector:
+        duration: {}
+
+    starting_brightness_pct:
+      name: Starting Brightness
+      description: Initial brightness for the light when the automation begins.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    ending_brightness_pct:
+      name: Ending Brightness
+      description: Target brightness for the light when the automation ends. Use 100% for full brightness. **Note:** This must be greater than Starting Brightness!
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    starting_color_temp:
+      name: Starting Color Temperature
+      description: Initial color temperature (in Kelvin) for the light when the automation begins. For best effect, set this to the warmest value supported by the bulbs being used.
+      default: 3000
+      selector:
+        color_temp:
+          unit: kelvin
+
+    ending_color_temp:
+      name: Ending Color Temperature
+      description: Target color temperature (in Kelvin) for the light when the automation ends. Set this to your preferred daytime color temperature.
+      selector:
+        color_temp:
+          unit: kelvin
+
+    min_seconds_per_step:
+      name: (Optional) Minimum Seconds Per Step
+      description: |
+        Minimum number of seconds each "step" will take. This is typically not used unless the total runtime is set very low. If the automation is failing due to the Zigbee network being flooded (something like EmberStatus.NETWORK_BUSY: 161), raise this value to compensate.
+      default: 10
+      selector:
+        number:
+          min: 2
+          max: 30
+          unit_of_measurement: "seconds"
+
+    prefix_actions:
+      name: (Optional) Prefix Actions
+      description: Actions to be performed at the beginning of the automation
+      default: []
+      selector:
+        action: {}
+
+    suffix_actions:
+      name: (Optional) Suffix Actions
+      description: Actions to be performed at the end of the automation
+      default: []
+      selector:
+        action: {}
+
+mode: single
+max_exceeded: silent
+
+variables:
+  # Without these variables, the inputs are available directly in YAML,
+  # but not inside an HA template.
+  # https://www.home-assistant.io/docs/blueprint/schema/#blueprint-inputs-in-templates
+  ending_brightness_pct: !input ending_brightness_pct
+  ending_color_temp: !input ending_color_temp
+  min_seconds_per_step: !input min_seconds_per_step
+  starting_brightness_pct: !input starting_brightness_pct
+  starting_color_temp: !input starting_color_temp
+  target_time: !input target_time_input
+  total_runtime: !input total_runtime
+
+  # Calculate the offset from the provided target time
+  total_runtime_hours: "{{ total_runtime['hours'] | int }}"
+  total_runtime_minutes: "{{ total_runtime['minutes'] | int }}"
+  total_runtime_seconds: "{{ total_runtime['seconds'] | int }}"
+  total_runtime_timedelta: "{{ timedelta(hours=total_runtime_hours, minutes=total_runtime_minutes, seconds=total_runtime_seconds) }}"
+
+trigger:
+  # Use this much simpler version to start directly at the time of the
+  # provided helper:
+  # - platform: time
+  #   at: target_time
+  - platform: template
+    value_template: "{{ now() == today_at(target_time) - total_runtime_timedelta }}"
+
+action:
+  # Workaround to execute an action from an input. Just placing
+  # !input always_action here would cause a syntax error.
+  - if:
+      - condition: template
+        value_template: "{{ true }}"
+    then: !input prefix_actions
+
+  - variables:
+      # These could almost all be script-scoped variables, but I've
+      # found it's much easier to debug them here since they will appear
+      # in the automation's traces.
+      total_step_count: "{{ ending_brightness_pct - starting_brightness_pct }}"
+      seconds_per_step: "{{ [(total_runtime['seconds'] / total_step_count), min_seconds_per_step] | max | int }}"
+      color_temp_delta: "{{ ending_color_temp - starting_color_temp }}"
+      color_temp_step: "{{ [ (color_temp_delta / total_step_count), 1] | max | int }}"
+
+  - service: light.turn_on
+    target: !input light
+    data:
+      color_temp_kelvin: "{{ starting_color_temp }}"
+      brightness_pct: "{{ starting_brightness_pct }}"
+
+  - repeat:
+      count: "{{ total_step_count }}"
+      sequence:
+        - delay:
+            seconds: "{{ seconds_per_step }}"
+        - variables:
+            current_color_temp: "{{ starting_color_temp + (repeat.index * color_temp_step) }}"
+        - service: light.turn_on
+          target: !input light
+          data:
+            brightness_step_pct: 1
+            color_temp_kelvin: "{{ current_color_temp }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ true }}"
+    then: !input suffix_actions
