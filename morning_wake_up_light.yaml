@@ -101,31 +101,49 @@ blueprint:
 mode: single
 max_exceeded: silent
 
-variables:
+trigger_variables:
+  # Script-scoped variables are not available during the trigger block.
+  # This block allows the trigger to access blueprint inputs.
+  # https://www.home-assistant.io/docs/automation/trigger/#trigger-variables
+  #
   # Without these variables, the inputs are available directly in YAML,
   # but not inside an HA template.
   # https://www.home-assistant.io/docs/blueprint/schema/#blueprint-inputs-in-templates
-  ending_brightness_pct: !input ending_brightness_pct
-  ending_color_temp: !input ending_color_temp
-  min_seconds_per_step: !input min_seconds_per_step
-  starting_brightness_pct: !input starting_brightness_pct
-  starting_color_temp: !input starting_color_temp
   target_time: !input target_time_input
   total_runtime: !input total_runtime
-
-  # Calculate the offset from the provided target time
-  total_runtime_hours: "{{ total_runtime['hours'] | int }}"
-  total_runtime_minutes: "{{ total_runtime['minutes'] | int }}"
-  total_runtime_seconds: "{{ total_runtime['seconds'] | int }}"
-  total_runtime_timedelta: "{{ timedelta(hours=total_runtime_hours, minutes=total_runtime_minutes, seconds=total_runtime_seconds) }}"
 
 trigger:
   # Use this much simpler version to start directly at the time of the
   # provided helper:
   # - platform: time
   #   at: target_time
+  #
+  # In testing, this only seems to trigger once since we are explicitly
+  # discarding seconds and ms. However, if it did trigger multiple
+  # times, the "single" execution mode would stop it from running
+  # repeatedly.
   - platform: template
-    value_template: "{{ now() == today_at(target_time) - total_runtime_timedelta }}"
+    value_template: >-
+      {%- set total_runtime_hours = total_runtime['hours'] | int -%}
+      {%- set total_runtime_minutes = total_runtime['minutes'] | int -%}
+      {%- set total_runtime_seconds = total_runtime['seconds'] | int -%}
+      {%- set total_runtime_timedelta = timedelta(hours=total_runtime_hours, minutes=total_runtime_minutes, seconds=total_runtime_seconds) -%}
+      {{ now().strftime('%H:%M') == (today_at(states(target_time)) - total_runtime_timedelta).strftime('%H:%M') }}
+
+variables:
+  ending_brightness_pct: !input ending_brightness_pct
+  ending_color_temp: !input ending_color_temp
+  min_seconds_per_step: !input min_seconds_per_step
+  starting_brightness_pct: !input starting_brightness_pct
+  starting_color_temp: !input starting_color_temp
+  total_runtime: !input total_runtime
+
+  # Math is hard
+  total_step_count: "{{ ending_brightness_pct - starting_brightness_pct }}"
+  total_runtime_in_seconds: "{{ (total_runtime['hours'] * 60 * 60) + (total_runtime['minutes'] * 60) + total_runtime['seconds'] }}"
+  seconds_per_step: "{{ [(total_runtime_in_seconds / total_step_count), min_seconds_per_step] | max  }}"
+  color_temp_delta: "{{ ending_color_temp - starting_color_temp }}"
+  color_temp_step: "{{ [ (color_temp_delta / total_step_count), 1] | max | int }}"
 
 action:
   # Workaround to execute an action from an input. Just placing
@@ -134,15 +152,6 @@ action:
       - condition: template
         value_template: "{{ true }}"
     then: !input prefix_actions
-
-  - variables:
-      # These could almost all be script-scoped variables, but I've
-      # found it's much easier to debug them here since they will appear
-      # in the automation's traces.
-      total_step_count: "{{ ending_brightness_pct - starting_brightness_pct }}"
-      seconds_per_step: "{{ [(total_runtime['seconds'] / total_step_count), min_seconds_per_step] | max | int }}"
-      color_temp_delta: "{{ ending_color_temp - starting_color_temp }}"
-      color_temp_step: "{{ [ (color_temp_delta / total_step_count), 1] | max | int }}"
 
   - service: light.turn_on
     target: !input light
@@ -156,11 +165,12 @@ action:
         - delay:
             seconds: "{{ seconds_per_step }}"
         - variables:
+            current_brightness_pct: "{{ [(starting_brightness_pct + repeat.index), 100] | min }}"
             current_color_temp: "{{ starting_color_temp + (repeat.index * color_temp_step) }}"
         - service: light.turn_on
           target: !input light
           data:
-            brightness_step_pct: 1
+            brightness_pct: "{{ current_brightness_pct }}"
             color_temp_kelvin: "{{ current_color_temp }}"
 
   - if:
